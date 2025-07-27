@@ -1,0 +1,74 @@
+# runtime_streamlit.py
+
+import streamlit as st
+import requests
+from datetime import date, timedelta
+
+# --- TMDB Config ---
+API_KEY = "47aa3b4def8767b97ea958e92b233aec"
+ACCESS_TOKEN = "your_token_here"  # Use your token
+BASE_URL = "https://api.themoviedb.org/3"
+HEADERS = {
+    "accept": "application/json",
+    "Authorization": f"Bearer {ACCESS_TOKEN}"
+}
+
+# --- Functions ---
+def search_title(query):
+    url = f"{BASE_URL}/search/multi"
+    params = {"query": query, "language": "en-US"}
+    res = requests.get(url, headers=HEADERS, params=params)
+    data = res.json()
+    return data['results'][0] if data['results'] else None
+
+def get_movie_runtime(movie_id):
+    url = f"{BASE_URL}/movie/{movie_id}"
+    res = requests.get(url, headers=HEADERS).json()
+    return res.get("runtime", 0), res.get("title", "Unknown")
+
+def get_tv_runtime(tv_id):
+    details = requests.get(f"{BASE_URL}/tv/{tv_id}", headers=HEADERS).json()
+    total_runtime = 0
+    for season in details.get("seasons", []):
+        season_data = requests.get(f"{BASE_URL}/tv/{tv_id}/season/{season['season_number']}", headers=HEADERS).json()
+        for ep in season_data.get("episodes", []):
+            total_runtime += ep.get("runtime", 0)
+    return total_runtime, details.get("name", "Unknown")
+
+def format_time(minutes):
+    return f"{minutes//60}h {minutes%60}m"
+
+# --- Streamlit UI ---
+st.title("🎬 Movie & TV Show Runtime Calculator")
+
+query = st.text_input("Enter a movie or show name")
+if query:
+    result = search_title(query)
+    if result:
+        media_type = result['media_type']
+        if media_type == "movie":
+            runtime, title = get_movie_runtime(result['id'])
+        elif media_type == "tv":
+            runtime, title = get_tv_runtime(result['id'])
+        else:
+            st.error("Unsupported media type.")
+            st.stop()
+
+        st.subheader(f"📽️ Title: {title}")
+        st.write(f"⏱️ Total Runtime: {format_time(runtime)} ({runtime} minutes)")
+
+        daily_hours = st.number_input("How many hours a day do you watch?", min_value=0.1, step=0.5)
+        watched_minutes = st.number_input("How many minutes have you already watched?", min_value=0)
+
+        if daily_hours:
+            remaining_minutes = max(runtime - watched_minutes, 0)
+            days = remaining_minutes / (daily_hours * 60)
+            finish_date = date.today() + timedelta(days=int(days))
+
+            st.write("📊 You'll finish in:")
+            st.write(f"- {days:.1f} days")
+            st.write(f"- {days/7:.1f} weeks")
+            st.write(f"- {days/30.44:.1f} months")
+            st.write(f"- Estimated finish date: **{finish_date.strftime('%B %d, %Y')}**")
+    else:
+        st.error("No results found.")
